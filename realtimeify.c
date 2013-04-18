@@ -12,7 +12,7 @@
 /* Some APIs use 0 to indicate the current process. */
 #define THIS_PID	0
 
-static int set_low_latency(int32_t target) {
+static int rtfy_set_low_latency(int32_t target) {
 	int pm_qos_fd = open("/dev/cpu_dma_latency", O_RDWR);
 	if (pm_qos_fd < 0) {
 		fprintf(stderr, "Failed to open PM QOS file: %s",
@@ -25,14 +25,28 @@ static int set_low_latency(int32_t target) {
 	return pm_qos_fd;
 }
 
-static void stop_low_latency(int fd) {
+static void rtfy_stop_low_latency(int fd) {
 	if (fd >= 0)
 		close(fd);
 }
 
-static int set_affin(unsigned int cpu, int num_cpus) {
+static int get_num_cpus(void) {
+	int num_cpus = sysconf(_SC_NPROCESSORS_ONLN);
+	if (num_cpus <= 0) {
+		perror("getting _SC_NPROCESSORS_ONLN failed");
+	}
+	return num_cpus;
+}
+
+static int rtfy_set_affin(unsigned int cpu, int num_cpus) {
 	cpu_set_t *mask;
 	size_t size;
+
+	if (num_cpus <= 0)
+		num_cpus = get_num_cpus();
+
+	if (num_cpus <= 0)
+		return EXIT_FAILURE;
 
 	mask = CPU_ALLOC(num_cpus);
 	if (mask == NULL) {
@@ -87,7 +101,7 @@ out:
 	return ret;
 }
 
-static int set_max_frequency(int cpu) {
+static int rtfy_set_max_frequency(int cpu) {
 	int ret;
 	char buf[128];
 	snprintf(buf,
@@ -101,7 +115,7 @@ static int set_max_frequency(int cpu) {
 	return EXIT_SUCCESS;
 }
 
-static int set_scaling(int cpu, const char *new_gov) {
+static int rtfy_set_scaling(int cpu, const char *new_gov) {
 	char buf[64];
 	int fd;
 	int ret = EXIT_SUCCESS;
@@ -122,7 +136,7 @@ static int set_scaling(int cpu, const char *new_gov) {
 	return ret;
 }
 
-static int set_shield(int cpu) {
+static int rtfy_set_shield(int cpu) {
 	char buf[64];
 	int ret;
 
@@ -139,7 +153,7 @@ static int set_shield(int cpu) {
 	return EXIT_SUCCESS;
 }
 
-static int set_sched(int policy) {
+static int rtfy_set_sched(int policy) {
 	struct sched_param param;
 
 	if (sched_getparam(THIS_PID, &param) < 0) {
@@ -161,6 +175,29 @@ static int set_sched(int policy) {
 	return EXIT_SUCCESS;
 }
 
+static int rtfy_memlock(void) {
+	if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0)
+		return EXIT_FAILURE;
+	else
+		return EXIT_SUCCESS;
+}
+
+int soft_realtimeify(void) {
+	if (getuid() != 0)
+		return EXIT_FAILURE;
+
+	if (rtfy_memlock() != EXIT_SUCCESS)
+		return EXIT_FAILURE;
+
+	if (rtfy_set_affin(0, 0) != EXIT_SUCCESS)
+		return EXIT_FAILURE;
+
+	if (rtfy_set_sched(SCHED_FIFO) != EXIT_SUCCESS)
+		return EXIT_FAILURE;
+
+	return EXIT_SUCCESS;
+}
+
 int realtimeify(int (*f)(int argc, char *argv[]), int argc, char *argv[]) {
 	char *prev_gov;
 	unsigned int target_cpu;
@@ -169,38 +206,35 @@ int realtimeify(int (*f)(int argc, char *argv[]), int argc, char *argv[]) {
 	int ret;
 	int tear_down_ret;
 
-	if (iopl(3) != 0) {
-		perror("ERROR: Could not get I/O privileges (%s).\n"
-			   "You need to be root.\n");
+	if (getuid() != 0) {
+		fprintf(stderr, "ERROR: You need to be root.\n");
 		return EXIT_FAILURE;
 	}
 
-	if (mlockall(MCL_CURRENT | MCL_FUTURE) < 0) {
+	if (rtfy_memlock() != EXIT_SUCCESS) {
 		perror("mlockall");
 		return EXIT_FAILURE;
 	}
 	printf("Current and future memory locked.\n");
 
-	num_cpus = sysconf(_SC_NPROCESSORS_ONLN);
-	if (num_cpus <= 0) {
-		perror("getting _SC_NPROCESSORS_ONLN failed");
+	num_cpus = get_num_cpus();
+	if (num_cpus <= 0)
 		return EXIT_FAILURE;
-	}
 	target_cpu = num_cpus/2;
 	
-	if (set_shield(target_cpu) != EXIT_SUCCESS) {
+	if (rtfy_set_shield(target_cpu) != EXIT_SUCCESS) {
 		fprintf(stderr, "ERROR: Could not shield target core.\n");
 		return EXIT_FAILURE;
 	}
 	printf("Target core %d shielded.\n", target_cpu);
 
-	if (set_affin(target_cpu, num_cpus) != EXIT_SUCCESS) {
+	if (rtfy_set_affin(target_cpu, num_cpus) != EXIT_SUCCESS) {
 		fprintf(stderr, "ERROR: Could not pin process to target core.\n");
 		return EXIT_FAILURE;
 	}
 	printf("Process pinned to target core.\n");
 
-	if (set_sched(SCHED_FIFO) != EXIT_SUCCESS) {
+	if (rtfy_set_sched(SCHED_FIFO) != EXIT_SUCCESS) {
 		fprintf(stderr, "ERROR: Could not reschedule process with real-time priority.\n");
 		return EXIT_FAILURE;
 	}
@@ -210,23 +244,24 @@ int realtimeify(int (*f)(int argc, char *argv[]), int argc, char *argv[]) {
 		fprintf(stderr, "ERROR: Could not get current CPU frequency scaling governor.\n");
 		return EXIT_FAILURE;
 	}
-	if (set_scaling(target_cpu, "userspace") != EXIT_SUCCESS) {
+	if (rtfy_set_scaling(target_cpu, "userspace") != EXIT_SUCCESS) {
 		fprintf(stderr, "ERROR: Could not set current CPU frequency scaling governor.\n");
 		return EXIT_FAILURE;
 	}
-	if (set_max_frequency(target_cpu)) {
+	if (rtfy_set_max_frequency(target_cpu)) {
 		fprintf(stderr, "ERROR: Could not set CPU frequency.\n");
 		return EXIT_FAILURE;
 	}
 	printf("CPU frequency scaling disabled.\n");
 
-	pm_qos_fd = set_low_latency(0);
+	pm_qos_fd = rtfy_set_low_latency(0);
+
 	ret = f(argc, argv);
 	tear_down_ret = EXIT_SUCCESS;
 
-	stop_low_latency(pm_qos_fd);
+	rtfy_stop_low_latency(pm_qos_fd);
 	munlockall();
-	if (set_scaling(target_cpu, prev_gov) != EXIT_SUCCESS) {
+	if (rtfy_set_scaling(target_cpu, prev_gov) != EXIT_SUCCESS) {
 		fprintf(stderr, "ERROR: Could not reenable CPU frequency scaling.\n");
 		tear_down_ret = EXIT_FAILURE;
 	}

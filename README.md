@@ -26,6 +26,8 @@ Existing code can be wrapped by this library to let it run in an environment mor
 
 * reverts all temporary changes above
 
+* alternatively, soft_realtimeify() can be used to engage a subset of above without drastic consequences on performance and power usage. It locks memory, uses realtime scheduling and fixates the affinity of the calling thread.
+
 ## Usage
 	int benchmark(int argc, char **argv) {
 		// allocate any memory used below
