@@ -12,7 +12,7 @@
 /* Some APIs use 0 to indicate the current process. */
 #define THIS_PID	0
 
-static int rtfy_set_low_latency(int32_t target) {
+int rtfy_set_low_latency(int32_t target) {
 	int pm_qos_fd = open("/dev/cpu_dma_latency", O_RDWR);
 	if (pm_qos_fd < 0) {
 		fprintf(stderr, "Failed to open PM QOS file: %s",
@@ -25,7 +25,7 @@ static int rtfy_set_low_latency(int32_t target) {
 	return pm_qos_fd;
 }
 
-static void rtfy_stop_low_latency(int fd) {
+void rtfy_stop_low_latency(int fd) {
 	if (fd >= 0)
 		close(fd);
 }
@@ -38,7 +38,7 @@ static int get_num_cpus(void) {
 	return num_cpus;
 }
 
-static int rtfy_set_affin(unsigned int cpu, int num_cpus) {
+int rtfy_set_affin(unsigned int cpu, int num_cpus) {
 	cpu_set_t *mask;
 	size_t size;
 
@@ -101,7 +101,7 @@ out:
 	return ret;
 }
 
-static int rtfy_set_max_frequency(int cpu) {
+int rtfy_set_max_frequency(int cpu) {
 	int ret;
 	char buf[128];
 	snprintf(buf,
@@ -115,7 +115,7 @@ static int rtfy_set_max_frequency(int cpu) {
 	return EXIT_SUCCESS;
 }
 
-static int rtfy_set_scaling(int cpu, const char *new_gov) {
+int rtfy_set_scaling(int cpu, const char *new_gov) {
 	char buf[64];
 	int fd;
 	int ret = EXIT_SUCCESS;
@@ -127,7 +127,7 @@ static int rtfy_set_scaling(int cpu, const char *new_gov) {
 		return EXIT_FAILURE;
 	}
 
-	if (write(fd, new_gov, strlen(new_gov)) != strlen(new_gov)) {
+	if (write(fd, new_gov, strlen(new_gov)) != (int)strlen(new_gov)) {
 		fprintf(stderr, "Failed to write to cpufreq file.\n");
 		ret = EXIT_FAILURE;
 	}
@@ -136,7 +136,7 @@ static int rtfy_set_scaling(int cpu, const char *new_gov) {
 	return ret;
 }
 
-static int rtfy_set_shield(int cpu) {
+int rtfy_set_shield(int cpu) {
 	char buf[64];
 	int ret;
 
@@ -153,7 +153,7 @@ static int rtfy_set_shield(int cpu) {
 	return EXIT_SUCCESS;
 }
 
-static int rtfy_set_sched(int policy) {
+int rtfy_set_sched(int policy) {
 	struct sched_param param;
 
 	if (sched_getparam(THIS_PID, &param) < 0) {
@@ -175,7 +175,7 @@ static int rtfy_set_sched(int policy) {
 	return EXIT_SUCCESS;
 }
 
-static int rtfy_memlock(void) {
+int rtfy_memlock(void) {
 	if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0)
 		return EXIT_FAILURE;
 	else
