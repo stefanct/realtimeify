@@ -1,6 +1,6 @@
 # A tiny library (that tries) to make Linux user-space code realtime-capable
 
-Existing code can be wrapped by this library to let it run in an environment more suitable for realtime applications. Using this is by no means suitable for *genuine* realtime application but might help to evalute code quickly regarding its realtime capabilities by getting disturbing stuff out of the way. It is advisable to use this with a non-generic realtime-aware kernel like the -lowlatency Ubuntu kernels or a fully -RT patched kernel.
+Existing code can be wrapped by this library to let it run in an environment more suitable for realtime applications. Using this is by no means suitable for *genuine* realtime applications but might help to evaluate code quickly regarding its realtime capabilities by getting disturbing stuff out of the way. It is advisable to use this with a non-generic realtime-aware kernel like the -lowlatency Ubuntu kernels or a fully -RT patched kernel.
 
 ## Features
 * prevents page faults by locking all memory.  
@@ -21,7 +21,7 @@ Existing code can be wrapped by this library to let it run in an environment mor
 
 * reschedules the process onto said core with FIFO realtime policy  
   ```see sched_setscheduler(2)```, ```sched_setscheduler (3posix)```
-  
+
 * runs the given function
 
 * reverts all temporary changes above
